@@ -1,0 +1,101 @@
+name: .NET Test
+description: An opinionated action that utilizes the test runner in the .NET SDK.
+inputs:
+  buildSwitches:
+    description: Provides a way to fully customize the build. Default is emopty. See https://learn.microsoft.com/en-us/visualstudio/msbuild/msbuild-command-line-reference?view=vs-2022#switches for more information.
+    required: false
+    default: ''
+  configuration:
+    description: Defines the build configuration. Default is Release (to reduce risk of surprises when transitioning to Production).
+    required: true
+    default: 'Release'
+  coverageReportFolderName:
+    description: The name of the folder where the coverage report will be written. Default is Coverage.
+    required: false
+    default: 'Coverage'
+  level:
+    description: Sets the verbosity level of the command. Allowed values are q[uiet], m[inimal], n[ormal], d[etailed], and diag[nostic]. The default is quiet.
+    required: true
+    default: 'quiet'
+  projects:
+    description: Optional path to the project(s) file to test. Pass empty to test whole solution. 
+    required: true
+    default: 'test/**/*.csproj'
+  testResultsFolderName:
+    description: The name of the folder where the test results will be written. Default is TestResults.
+    required: false
+    default: 'TestResults'
+  restoreCacheKey:
+    description: When set, current workspace will be overwritten with the content of the restore cache. Default is empty.
+    required: false
+    default: ''
+  uploadBuildArtifactName:
+    description: The name of the generated build artifact. Default is to BuildArtifact.
+    required: false
+    default: 'BuildArtifact'
+runs:
+  using: composite
+  steps:
+    - if: inputs.restoreCacheKey != ''
+      name: Restore
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          ${{ github.workspace }}
+          !${{ github.workspace }}/.git
+          ~/.nuget/packages
+        key: ${{ inputs.restoreCacheKey }}
+        restore-keys: |
+          dotnet-restore-
+        enableCrossOsArchive: true
+        fail-on-cache-miss: true
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        pattern: {{ inputs.uploadBuildArtifactName }}
+        merge-multiple: true
+
+    - name: Test
+      run: |
+        if [ "${{ inputs.projects }}" == "" ]; then
+            dotnet test --configuration ${{ inputs.configuration }} --verbosity ${{ inputs.level }} --logger trx --results-directory ${{ runner.temp }}/${{ inputs.testResultsFolderName }} --collect:"XPlat Code Coverage;Format=opencover" -p:CoverletOutputFormat=opencover -p:UseSourceLink=true ${{ inputs.buildSwitches }}
+        else
+            shopt -s globstar extglob
+            for file in ${{ inputs.projects }}; do
+              dotnet test $file --configuration ${{ inputs.configuration }} --verbosity ${{ inputs.level }} --logger trx --results-directory ${{ runner.temp }}/${{ inputs.testResultsFolderName }} --collect:"XPlat Code Coverage;Format=opencover" -p:CoverletOutputFormat=opencover -p:UseSourceLink=true ${{ inputs.buildSwitches }}
+              echo "Tested and written results for '$file'"
+            done
+        fi
+      shell: bash
+
+    - name: Use Report Generator
+      run: reportgenerator "-reports:${{ runner.temp }}/${{ inputs.testResultsFolderName }}/**/*.opencover.xml" "-targetdir:${{ github.workspace }}/${{ inputs.coverageReportFolderName }}" "-reporttypes:Cobertura;MarkdownSummaryGithub;HTMLInline;HTMLChart"
+      shell: bash
+
+    - name: Write to Job Summary
+      if: success() && runner.os == 'Linux'
+      run: cat ${{ github.workspace }}/${{ inputs.coverageReportFolderName }}/SummaryGithub.md >> $GITHUB_STEP_SUMMARY
+      shell: bash
+
+    - name: Write to Job Summary
+      if: success() && runner.os == 'Windows'
+      run: Get-Content ${{ github.workspace }}/${{ inputs.coverageReportFolderName }}/SummaryGithub.md | Add-Content $env:GITHUB_STEP_SUMMARY
+      shell: pwsh
+
+    - name: Upload CoverageReport
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: CoverageReport-${{ inputs.configuration }}-${{ runner.os }}-${{ hashFiles(inputs.projects) }}
+        path: ${{ github.workspace }}/${{ inputs.coverageReportFolderName }}
+
+    - name: Upload TestResults
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: TestResults-${{ inputs.configuration }}-${{ runner.os }}-${{ hashFiles(inputs.projects) }}
+        path: ${{ runner.temp }}/${{ inputs.testResultsFolderName }}
+branding:
+  icon: 'umbrella'
+  color: 'blue'
