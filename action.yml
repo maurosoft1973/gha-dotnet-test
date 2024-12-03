@@ -53,7 +53,7 @@ runs:
     - name: Download all artifacts
       uses: actions/download-artifact@v4
       with:
-        pattern: {{ inputs.uploadBuildArtifactName }}
+        pattern: ${{ inputs.uploadBuildArtifactName }}
         merge-multiple: true
 
     - name: Test

@@ -7,7 +7,7 @@ Uses the .NET CLI `dotnet test` [command](https://learn.microsoft.com/en-us/dotn
 To use this action in your GitHub repository, you can follow these steps:
 
 ```yaml
-uses: maurosoft1973/dotnet-test@v2
+uses: maurosoft1973/dotnet-test@v1
 ```
 
 ### Inputs
